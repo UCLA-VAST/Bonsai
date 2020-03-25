@@ -11,11 +11,9 @@
 // #define DEBUG
 // #define CHECK_INPUT
 // #define WRITEOUTPUT
-#define HW
 
 int main(int argc, char** argv)
 {
-#ifdef HW
     if (argc != 5) {
         std::cout << "Usage: " << argv[0] << " <XCLBIN File> + filepath + way number + chunk number" << std::endl;
         return EXIT_FAILURE;
@@ -58,51 +56,6 @@ int main(int argc, char** argv)
     FILE *readFile;
     readFile = fopen(inFile.c_str(), "r");
     FILE *hardFile = fopen(outFile.c_str(), "w");
-#else
-    if (argc != 2) {
-        std::cout << "Usage: " << argv[0] << " <XCLBIN File> " << std::endl;
-        return EXIT_FAILURE;
-    }
-
-    std::string binaryFile = argv[1];
-
-    struct timeval startTime, stopTime;
-    double exec_time;
-    double exec_bandwidth;
-    
-    double krnl_exec_time;
-    double krnl_exec_bandwidth;
-
-    uint64_t way_num = 512;
-    uint64_t chunk_num = 16;
-
-    const uint64_t number_of_words = way_num * chunk_num; // number of non-zero elements
-    const uint64_t number_of_readin_char = 9 * number_of_words - 1;
-    const uint64_t total_words = number_of_words;
-    const uint32_t   actual_offset = 8 * 16;
-
-    uint8_t num_pass = (uint8_t) (log2 (way_num * 1.0) / 3);
-    // for debug
-    // uint8_t num_pass = 1;
-    std::cout << "Number of pass is " << static_cast<uint16_t>(num_pass) << std::endl;
-
-    int check_status = 0;
-
-    //Allocate Memory in Host Memory
-    // std::vector<unsigned int,aligned_allocator<unsigned int>> h_input(total_words + actual_offset);
-    // std::vector<unsigned int,aligned_allocator<unsigned int>> h_output(total_words + actual_offset);
-    std::vector<unsigned int,aligned_allocator<unsigned int>> h_input(total_words);
-    std::vector<unsigned int,aligned_allocator<unsigned int>> h_output(total_words);
-
-    // specify input & output files
-    FILE *readFile;
-    readFile = fopen("/curr/wkqiao/tmp/sorting_benchmarks/data_512_16.txt", "r");
-    // FILE *hardFile = fopen("hard_out_262144_64_1st_pass.txt", "w");
-    FILE *hardFile = fopen("hard_emu_out_512_16.txt", "w");
-    // for debug
-    // readFile = fopen("./hard_out_262144_64_5th_pass.txt", "r");
-    //FILE *hardFile = fopen("hard_out_262144_64_6th_pass.txt", "w");
-#endif
      
     unsigned char *buffer;
     buffer = (unsigned char *)malloc(number_of_readin_char * sizeof(unsigned char));
