@@ -100,8 +100,6 @@ wire                                ap_done                       ;
 wire                                kernel_rst                    ;
 wire [64-1:0]                       size                          ;
 wire [8-1:0]                        num_pass                      ;
-wire [64-1:0]                       single_trans_bytes            ;
-wire [32-1:0]                       log_single_trans_bytes        ;
 wire [64-1:0]                       in_ptr                        ;
 wire [64-1:0]                       out_ptr                       ;
 
@@ -146,8 +144,6 @@ inst_control_s_axi (
   .ap_idle   ( ap_idle               ),
   .size      ( size                  ),
   .num_pass  ( num_pass              ),
-  .single_trans_bytes ( single_trans_bytes ),
-  .log_single_trans_bytes ( log_single_trans_bytes ), 
   .in_ptr    ( in_ptr                ),
   .out_ptr   ( out_ptr               )
 );
@@ -197,8 +193,6 @@ top_wrapper_inst0 (
   .kernel_rst      ( kernel_rst      ),
   .size            ( size            ),
   .num_pass        ( num_pass        ),
-  .single_trans_bytes ( single_trans_bytes ),
-  .log_single_trans_bytes ( log_single_trans_bytes ),
   .in_ptr          ( in_ptr          ),
   .out_ptr         ( out_ptr         )
 );

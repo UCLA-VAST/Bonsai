@@ -6,23 +6,18 @@
 #include <cmath>
 #include <vector>
 
-
-////////////////////////////////////////////////////////////////////////////////
-// #define DEBUG
-// #define CHECK_INPUT
-// #define WRITEOUTPUT
+#define WRITEOUTPUT
 
 int main(int argc, char** argv)
 {
-    if (argc != 5) {
-        std::cout << "Usage: " << argv[0] << " <XCLBIN File> + filepath + way number + chunk number" << std::endl;
+    if (argc != 4) {
+        std::cout << "Usage: " << argv[0] << " <XCLBIN File> + filepath + #num_element in power of 2" << std::endl;
         return EXIT_FAILURE;
     }
 
     std::string binaryFile = argv[1];
     std::string inFile = argv[2];
-    std::string way_specified = argv[3];
-    std::string chunk_specified = argv[4];
+    std::string pow_specified = argv[3];
 
     struct timeval startTime, stopTime;
     double exec_time;
@@ -31,27 +26,25 @@ int main(int argc, char** argv)
     double krnl_exec_time;
     double krnl_exec_bandwidth;
 
-    uint64_t way_num = std::stoul(way_specified);
-    uint64_t chunk_num = std::stoul(chunk_specified);
+    uint64_t pow_num = std::stoul(pow_specified);
 
-    const uint64_t number_of_words = way_num * chunk_num; 
+    const uint64_t number_of_words = ((uint64_t)1 << pow_num);
     const uint64_t number_of_readin_char = 9 * number_of_words - 1;
     const uint64_t total_words = number_of_words;
-    //const uint32_t   actual_offset = 8 * 16;
 
     int check_status = 0;
 
-    uint8_t num_pass = (uint8_t) (log2 (way_num * 1.0) / 3);
+    // initial pass starts from 2^4 elements
+    // sorted chunk increase 2^3 per each pass 
+    uint8_t num_pass = (uint8_t) ((pow_num - 4) % 3) == 0 ? ((pow_num - 4) / 3) : ((pow_num - 4) / 3) + 1;
     std::cout << "Number of pass is " << static_cast<uint16_t>(num_pass) << std::endl;
 
     //Allocate Memory in Host Memory
-    // std::vector<unsigned int,aligned_allocator<unsigned int>> h_input(total_words + actual_offset);
-    // std::vector<unsigned int,aligned_allocator<unsigned int>> h_output(total_words + actual_offset);
     std::vector<unsigned int,aligned_allocator<unsigned int>> h_input(total_words);
     std::vector<unsigned int,aligned_allocator<unsigned int>> h_output(total_words);
 
     // specify input & output files
-    std::string outFile = "hard_output_" + way_specified + "_" + chunk_specified + ".txt";
+    std::string outFile = "hw_output_1^" + pow_specified + ".txt";
 
     FILE *readFile;
     readFile = fopen(inFile.c_str(), "r");
@@ -60,7 +53,7 @@ int main(int argc, char** argv)
     unsigned char *buffer;
     buffer = (unsigned char *)malloc(number_of_readin_char * sizeof(unsigned char));
 
-    // prepare the input data
+    // prepare the input data: cast from text into 32-bit data
     uint64_t i, j;
     fread(buffer, 1, number_of_readin_char, readFile);
     for (i = 0; i < number_of_words; i++) {
@@ -69,12 +62,6 @@ int main(int argc, char** argv)
             h_input[i] = (h_input[i] << 4) + (buffer[9*i+j] > '9' ? (buffer[9*i+j]-87) : (buffer[9*i+j]-'0'));
         }
     }
-    /*
-    for (i = number_of_words; i < total_words + actual_offset; i++)
-    {
-	h_input[i] = 0;
-    }
-    */
 
     free(buffer);
     
@@ -82,7 +69,6 @@ int main(int argc, char** argv)
         
 
     // Fill our data sets with pattern
-    //for(i = 0; i < total_words + actual_offset; i++) {
     for(i = 0; i < total_words; i++) {
         h_output[i] = 0; 
     }
@@ -91,10 +77,10 @@ int main(int argc, char** argv)
 
     cl_int err;
     std::vector<cl::Device> devices = xcl::get_xil_devices();
-    cl::Device device = devices[0];
+    cl::Device device = devices[1];
 
-    OCL_CHECK(err, cl::Context context(device, NULL, NULL, NULL, &err));
-    OCL_CHECK(err, cl::CommandQueue q(context, device, CL_QUEUE_PROFILING_ENABLE, &err));
+    OCL_CHECK(err, cl::Context context({device}, NULL, NULL, NULL, &err));
+    OCL_CHECK(err, cl::CommandQueue q(context, {device}, CL_QUEUE_PROFILING_ENABLE, &err));
     OCL_CHECK(err, std::string device_name = device.getInfo<CL_DEVICE_NAME>(&err));
 
     cl::Event krnlEvent;
@@ -103,12 +89,11 @@ int main(int argc, char** argv)
     auto fileBuf = xcl::read_binary_file(binaryFile);
     cl::Program::Binaries bins{{fileBuf.data(), fileBuf.size()}};
     devices.resize(1);
-    OCL_CHECK(err, cl::Program program(context, devices, bins, NULL, &err));
+    OCL_CHECK(err, cl::Program program(context, {device}, bins, NULL, &err));
     OCL_CHECK(err, cl::Kernel krnl_sorter(program,"merger_tree_p4_l4_i8", &err));
 
     // gettimeofday(&startTime, NULL);
     // Allocate Buffer in Global Memory
-    // size_t total_input_bytes = sizeof(unsigned int) * (total_words + actual_offset);
     size_t total_input_bytes = sizeof(unsigned int) * (total_words);
     std::cout << "Total input bytes " << total_input_bytes << '\n';
     OCL_CHECK(err, cl::Buffer buffer00   (context,CL_MEM_USE_HOST_PTR | CL_MEM_READ_WRITE,
@@ -123,15 +108,10 @@ int main(int argc, char** argv)
     
     //Set the Kernel Arguments
     uint64_t size = sizeof(unsigned int) * total_words;
-    uint64_t single_trans_bytes = chunk_num * sizeof(unsigned int);
-    uint32_t log_single_trans_bytes = (uint32_t)log2 (single_trans_bytes * 1.0);
-    std::cout << "log_single_trans_bytes is " << log_single_trans_bytes << std::endl;
 
     int nargs=0;
     OCL_CHECK(err, err = krnl_sorter.setArg(nargs++,size));
     OCL_CHECK(err, err = krnl_sorter.setArg(nargs++,num_pass));
-    OCL_CHECK(err, err = krnl_sorter.setArg(nargs++,single_trans_bytes));
-    OCL_CHECK(err, err = krnl_sorter.setArg(nargs++,log_single_trans_bytes));
     OCL_CHECK(err, err = krnl_sorter.setArg(nargs++,buffer00));
     OCL_CHECK(err, err = krnl_sorter.setArg(nargs++,buffer01));
 
@@ -234,6 +214,7 @@ int main(int argc, char** argv)
             if(h_output[i] > h_output[i+1]) {
                 printf("%ld element %08x is larger than %ld element %08x\n", i+1, h_output[i], i+2, h_output[i+1]);
                 check_status = 1;
+                break;
             }
         }
     }
@@ -243,6 +224,7 @@ int main(int argc, char** argv)
             if(h_input[i] > h_input[i+1]) {
                 printf("%ld element %08x is larger than %ld element %08x\n", i+1, h_input[i], i+2, h_input[i+1]);
                 check_status = 1;
+                break;
             }
         }
     }

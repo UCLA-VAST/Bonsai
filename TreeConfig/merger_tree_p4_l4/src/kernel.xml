@@ -8,10 +8,8 @@
     <args>
       <arg name="size" addressQualifier="0" id="0" port="s_axi_control" size="0x8" offset="0x010" type="ulong" hostOffset="0x0" hostSize="0x8"/> 
       <arg name="num_pass" addressQualifier="0" id="1" port="s_axi_control" size="0x4" offset="0x018" type="uchar" hostOffset="0x0" hostSize="0x1"/> 
-      <arg name="single_trans_bytes" addressQualifier="0" id="2" port="s_axi_control" size="0x8" offset="0x020" type="ulong" hostOffset="0x0" hostSize="0x8"/> 
-      <arg name="log_single_trans_bytes" addressQualifier="0" id="3" port="s_axi_control" size="0x4" offset="0x028" type="uint" hostOffset="0x0" hostSize="0x4"/> 
-      <arg name="in_ptr" addressQualifier="1" id="4" port="m00_axi" size="0x8" offset="0x030" type="int*" hostOffset="0x0" hostSize="0x8"/> 
-      <arg name="out_ptr" addressQualifier="1" id="5" port="m00_axi" size="0x8" offset="0x038" type="int*" hostOffset="0x0" hostSize="0x8"/> 
+      <arg name="in_ptr" addressQualifier="1" id="2" port="m00_axi" size="0x8" offset="0x020" type="int*" hostOffset="0x0" hostSize="0x8"/> 
+      <arg name="out_ptr" addressQualifier="1" id="3" port="m00_axi" size="0x8" offset="0x028" type="int*" hostOffset="0x0" hostSize="0x8"/> 
     </args>
   </kernel>
 </root>

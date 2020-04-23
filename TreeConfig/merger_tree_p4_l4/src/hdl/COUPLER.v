@@ -18,8 +18,10 @@ reg [P_WIDTH-1:0] 				first_elem_clocked;
 reg [P_WIDTH-1:0] 				second_elem_clocked;
 wire [2*P_WIDTH-1:0] 			out_elem;
 wire [P_WIDTH-1:0] 				in_elem;
+wire                          in_empty;
 wire 					in_deq, out_enq;
 wire 					first_is_zero;
+wire                          out_full;
 IFIFO16 #(P_WIDTH) in_fifo (.i_clk(i_clk),
                                .i_data(i_data),
                                .o_data(in_elem),

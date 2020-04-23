@@ -37,8 +37,6 @@ module merger_tree_p4_l4_i8_control_s_axi #(
   // User defined arguments
   output wire [64-1:0]             size                  ,
   output wire [8-1:0]              num_pass              ,
-  output wire [64-1:0]             single_trans_bytes    ,
-  output wire [32-1:0]             log_single_trans_bytes,
   output wire [64-1:0]             in_ptr                ,
   output wire [64-1:0]             out_ptr               
 );
@@ -65,20 +63,13 @@ module merger_tree_p4_l4_i8_control_s_axi #(
 // 0x018 : Data signal of num_pass
 //         bit 07~0 - num_pass[7:0] (Read/Write)
 // 0x01c : reserved
-// 0x020 : Data signal of single_trans_bytes
-//         bit 31~0 - single_trans_bytes[31:0] (Read/Write)
-// 0x024 : Data signal of single_trans_bytes
-//         bit 31~0 - single_trans_bytes[63:32] (Read/Write)
-// 0x028 : Data signal of log_single_trans_bytes
-//         bit 31~0 - log_single_trans_bytes[31:0] (Read/Write)
-// 0x02c : reserved
-// 0x030 : Data signal of in_ptr
+// 0x020 : Data signal of in_ptr
 //         bit 31~0 - in_ptr[31:0] (Read/Write)
-// 0x034 : Data signal of in_ptr
+// 0x024 : Data signal of in_ptr
 //         bit 31~0 - in_ptr[63:32] (Read/Write)
-// 0x038 : Data signal of out_ptr
+// 0x028 : Data signal of out_ptr
 //         bit 31~0 - out_ptr[31:0] (Read/Write)
-// 0x03c : Data signal of out_ptr
+// 0x02c : Data signal of out_ptr
 //         bit 31~0 - out_ptr[63:32] (Read/Write)
 // (SC = Self Clear, COR = Clear on Read, TOW = Toggle on Write, COH = Clear on Handshake)
 
@@ -92,13 +83,10 @@ localparam [C_ADDR_WIDTH-1:0]       LP_ADDR_ISR                    = 12'h00c;
 localparam [C_ADDR_WIDTH-1:0]       LP_ADDR_SIZE_0                 = 12'h010;
 localparam [C_ADDR_WIDTH-1:0]       LP_ADDR_SIZE_1                 = 12'h014;
 localparam [C_ADDR_WIDTH-1:0]       LP_ADDR_NUM_PASS_0             = 12'h018;
-localparam [C_ADDR_WIDTH-1:0]       LP_ADDR_SINGLE_TRANS_BYTES_0   = 12'h020;
-localparam [C_ADDR_WIDTH-1:0]       LP_ADDR_SINGLE_TRANS_BYTES_1   = 12'h024;
-localparam [C_ADDR_WIDTH-1:0]       LP_ADDR_LOG_SINGLE_TRANS_BYTES_0 = 12'h028;
-localparam [C_ADDR_WIDTH-1:0]       LP_ADDR_in_ptr_0               = 12'h030;
-localparam [C_ADDR_WIDTH-1:0]       LP_ADDR_in_ptr_1               = 12'h034;
-localparam [C_ADDR_WIDTH-1:0]       LP_ADDR_out_ptr_0              = 12'h038;
-localparam [C_ADDR_WIDTH-1:0]       LP_ADDR_out_ptr_1              = 12'h03c;
+localparam [C_ADDR_WIDTH-1:0]       LP_ADDR_in_ptr_0               = 12'h020;
+localparam [C_ADDR_WIDTH-1:0]       LP_ADDR_in_ptr_1               = 12'h024;
+localparam [C_ADDR_WIDTH-1:0]       LP_ADDR_out_ptr_0              = 12'h028;
+localparam [C_ADDR_WIDTH-1:0]       LP_ADDR_out_ptr_1              = 12'h02c;
 localparam integer                  LP_SM_WIDTH                    = 2;
 localparam [LP_SM_WIDTH-1:0]        SM_WRIDLE                      = 2'd0;
 localparam [LP_SM_WIDTH-1:0]        SM_WRDATA                      = 2'd1;
@@ -132,8 +120,6 @@ reg                                 int_isr                        = 1'b0;
 
 reg  [64-1:0]                       int_size                       = 64'd0;
 reg  [8-1:0]                        int_num_pass                   = 8'd0;
-reg  [64-1:0]                       int_single_trans_bytes         = 64'd0;
-reg  [32-1:0]                       int_log_single_trans_bytes     = 32'd0;
 reg  [64-1:0]                       int_in_ptr                     = 64'd0;
 reg  [64-1:0]                       int_out_ptr                    = 64'd0;
 
@@ -258,15 +244,6 @@ always @(posedge aclk) begin
         LP_ADDR_NUM_PASS_0: begin
           rdata_r <= {24'b0, int_num_pass[0+:8]};
         end
-        LP_ADDR_SINGLE_TRANS_BYTES_0: begin
-          rdata_r <= int_single_trans_bytes[0+:32];
-        end
-        LP_ADDR_SINGLE_TRANS_BYTES_1: begin
-          rdata_r <= int_single_trans_bytes[32+:32];
-        end
-        LP_ADDR_LOG_SINGLE_TRANS_BYTES_0: begin
-          rdata_r <= int_log_single_trans_bytes[0+:32];
-        end
         LP_ADDR_in_ptr_0: begin
           rdata_r <= int_in_ptr[0+:32];
         end
@@ -294,8 +271,6 @@ assign ap_start     = int_ap_start;
 assign int_ap_idle  = ap_idle;
 assign size = int_size;
 assign num_pass = int_num_pass;
-assign single_trans_bytes = int_single_trans_bytes;
-assign log_single_trans_bytes = int_log_single_trans_bytes;
 assign in_ptr = int_in_ptr;
 assign out_ptr = int_out_ptr;
 
@@ -383,36 +358,6 @@ always @(posedge aclk) begin
   else if (aclk_en) begin
     if (w_hs && waddr == LP_ADDR_NUM_PASS_0)
       int_num_pass[0+:8] <= (wdata[0+:8] & wmask[0+:8]) | (int_num_pass[0+:8] & ~wmask[0+:8]);
-  end
-end
-
-// int_single_trans_bytes[32-1:0]
-always @(posedge aclk) begin
-  if (areset)
-    int_single_trans_bytes[0+:32] <= 32'd0;
-  else if (aclk_en) begin
-    if (w_hs && waddr == LP_ADDR_SINGLE_TRANS_BYTES_0)
-      int_single_trans_bytes[0+:32] <= (wdata[0+:32] & wmask[0+:32]) | (int_single_trans_bytes[0+:32] & ~wmask[0+:32]);
-  end
-end
-
-// int_single_trans_bytes[32-1:0]
-always @(posedge aclk) begin
-  if (areset)
-    int_single_trans_bytes[32+:32] <= 32'd0;
-  else if (aclk_en) begin
-    if (w_hs && waddr == LP_ADDR_SINGLE_TRANS_BYTES_1)
-      int_single_trans_bytes[32+:32] <= (wdata[0+:32] & wmask[0+:32]) | (int_single_trans_bytes[32+:32] & ~wmask[0+:32]);
-  end
-end
-
-// int_log_single_trans_bytes[32-1:0]
-always @(posedge aclk) begin
-  if (areset)
-    int_log_single_trans_bytes[0+:32] <= 32'd0;
-  else if (aclk_en) begin
-    if (w_hs && waddr == LP_ADDR_LOG_SINGLE_TRANS_BYTES_0)
-      int_log_single_trans_bytes[0+:32] <= (wdata[0+:32] & wmask[0+:32]) | (int_log_single_trans_bytes[0+:32] & ~wmask[0+:32]);
   end
 end
 

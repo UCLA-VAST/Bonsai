@@ -41,8 +41,6 @@ module Top_wrapper #(
   input  wire                              kernel_rst     ,
   input  wire [64-1:0]                     size           ,
   input  wire [8-1:0]                      num_pass       ,
-  input  wire [64-1:0]                     single_trans_bytes, 
-  input  wire [32-1:0]                     log_single_trans_bytes,
   input  wire [64-1:0]                     in_ptr         ,
   input  wire [64-1:0]                     out_ptr              
 );
@@ -131,8 +129,6 @@ MERGER_TREE_P4_L4_TOP_inst0 (
   .ap_start                  ( ap_start_pulse          ),
   .ap_done                   ( ap_done_i               ),
   .num_pass                  ( num_pass                ),
-  .single_trans_bytes        ( single_trans_bytes      ),
-  .log_single_trans_bytes    ( log_single_trans_bytes  ),
   .in_addr_offset            ( in_ptr                  ),
   .in_xfer_size_in_bytes     ( size                    ),
   .out_addr_offset           ( out_ptr                 ),

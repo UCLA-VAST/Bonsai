@@ -26,6 +26,9 @@ module axi_read_master #(
   // Range: 16:C_M_AXI_ADDR_WIDTH
   parameter integer C_XFER_SIZE_WIDTH   = C_M_AXI_ADDR_WIDTH,
 
+  // Specifies how many bytes each full burst is
+  parameter integer C_BURST_SIZE_BYTES = 1024,
+
   // Specifies the maximum number of AXI4 transactions that may be outstanding.
   // Affects FIFO depth if data FIFO is enabled.
   parameter integer C_MAX_OUTSTANDING   = 16, 
@@ -39,17 +42,19 @@ module axi_read_master #(
 )
 (
   // System signals
-  input  wire                          aclk,
-  input  wire                          areset,
+  input  wire                                               aclk,
+  input  wire                                               areset,
 
   // Control signals
-  input  wire                          ctrl_start,              // Pulse high for one cycle to begin reading
-  input  wire                          pass_start,              // Pusle high for one cycle to indicate one pass begin
-  output wire                          ctrl_done,               // Pulses high for one cycle when transfer request is complete
+  input  wire                                               ctrl_start,              // Pulse high for one cycle to begin reading
+  input  wire                                               pass_start,              // Pusle high for one cycle to indicate one pass begin
+  output wire                                               ctrl_done,               // Pulses high for one cycle when transfer request is complete
 
   // The following ctrl signals are sampled when ctrl_start is asserted
-  input  wire [C_NUM_CHANNELS-1:0][C_M_AXI_ADDR_WIDTH-1:0] ctrl_addr_offset,        // Starting Address offset
-  input  wire                     [C_XFER_SIZE_WIDTH-1:0]  ctrl_xfer_size_in_bytes, // Length in number of bytes, limited by the address width.
+  input  wire [C_NUM_CHANNELS-1:0][C_M_AXI_ADDR_WIDTH-1:0]  ctrl_addr_offset,        // Starting Address offset
+  input  wire                     [C_XFER_SIZE_WIDTH-1:0]   ctrl_xfer_size_in_bytes, // Length in number of bytes, limited by the address width.
+  input  wire                                               ctrl_read_divide,        // A full axi read burst needs to be divided for multiple run.
+  input  wire                     [C_XFER_SIZE_WIDTH-1:0]   ctrl_read_run_count,     // How many 512-bit axi transfer is needed for the current run.
 
   // AXI4 master interface (read only)
   output wire                                               m_axi_arvalid,
@@ -100,7 +105,7 @@ endfunction
 localparam integer LP_DW_BYTES                   = C_M_AXI_DATA_WIDTH/8;
 localparam integer LP_LOG_DW_BYTES               = $clog2(LP_DW_BYTES);
 localparam integer LP_MAX_BURST_LENGTH           = 256;   // Max AXI Protocol burst length
-localparam integer LP_MAX_BURST_BYTES            = 1024;  // Max AXI Protocol burst size in bytes
+localparam integer LP_MAX_BURST_BYTES            = C_BURST_SIZE_BYTES;  // Max AXI Protocol burst size in bytes
 localparam integer LP_AXI_BURST_LEN              = f_min(LP_MAX_BURST_BYTES/LP_DW_BYTES, LP_MAX_BURST_LENGTH);
 localparam integer LP_LOG_BURST_LEN              = $clog2(LP_AXI_BURST_LEN);
 localparam integer LP_OUTSTANDING_CNTR_WIDTH     = $clog2(C_MAX_OUTSTANDING+1);
@@ -165,6 +170,19 @@ logic [C_NUM_CHANNELS-1:0][C_M_AXI_DATA_WIDTH:0]              fifo_dout;
 logic [C_NUM_CHANNELS-1:0]                                    tlast_fifo_out;
 logic [C_NUM_CHANNELS-1:0][C_M_AXI_DATA_WIDTH-1:0]            tdata_fifo_out;
 
+// presorted data
+logic [C_M_AXI_DATA_WIDTH-1:0]                                m_axi_rdata_sort;
+logic                                                         m_axi_rvalid_sort;
+logic                                                         rxfer_sort;
+logic                                                         m_axi_rlast_sort;
+logic [C_ID_WIDTH - 1:0]                                      m_axi_rid_sort;
+logic [C_NUM_CHANNELS-1:0]                                    r_final_transaction_sort;
+
+// multiple run info
+logic [C_NUM_CHANNELS-1:0][C_XFER_SIZE_WIDTH-1:0]             axi_cnt_per_run;
+logic [C_NUM_CHANNELS-1:0]                                    run_last;
+logic [C_NUM_CHANNELS-1:0]                                    run_last_sort;
+
 
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -182,6 +200,7 @@ assign ctrl_done = &done;
 
 always @(posedge aclk) begin
   start_d1 <= ctrl_start;
+  start <= start_d1;
 end
 
 always @(posedge aclk) begin
@@ -208,7 +227,6 @@ assign num_transactions = total_len_r[LP_LOG_BURST_LEN+:LP_TRANSACTION_CNTR_WIDT
 assign has_partial_bursts = total_len_r[0+:LP_LOG_BURST_LEN] == {LP_LOG_BURST_LEN{1'b1}} ? 1'b0 : 1'b1;
 
 always @(posedge aclk) begin
-  start <= start_d1;
   final_burst_len <=  total_len_r[0+:LP_LOG_BURST_LEN];
 end
 
@@ -338,7 +356,7 @@ end
 
 always_comb begin 
   for (int i = 0; i < C_NUM_CHANNELS; i++) begin 
-    incr_ar_to_r_cnt[i] = m_axis_tvalid[i] & m_axis_tready[i] & (m_axis_tlast[i] || (tcnt[i] == (LP_AXI_BURST_LEN-1)));
+    incr_ar_to_r_cnt[i] = m_axis_tvalid[i] & m_axis_tready[i] & (tcnt[i] == (LP_AXI_BURST_LEN-1));
     decr_ar_to_r_cnt[i] = arxfer[i];
   end
 end
@@ -441,19 +459,109 @@ endgenerate
 
 always_comb begin 
   for (int i = 0; i < C_NUM_CHANNELS; i++) begin
-    tvalid[i] = m_axi_rvalid && (m_axi_rid == i); 
-    tdata[i] = m_axi_rdata;
-    tlast[i] = rxfer & m_axi_rlast && (m_axi_rid == i) && r_final_transaction[i]; 
+    tvalid[i] = m_axi_rvalid_sort && (m_axi_rid_sort == i); 
+    tdata[i] = m_axi_rdata_sort;
+    tlast[i] = rxfer_sort && (m_axi_rid_sort == i) && ((m_axi_rlast_sort && r_final_transaction_sort[i]) || run_last_sort[i]);
   end
 end
 
+presorter #(
+    .DATA_WIDTH(C_M_AXI_DATA_WIDTH/16)
+)
+presorter_inst(
+    .aclk(aclk),  
+    .in_data(m_axi_rdata),
+    .out_data(m_axi_rdata_sort)
+);
 
+delay_chain #(
+    .WIDTH(1), 
+    .STAGES(10)
+) 
+rvalid_delay_inst(
+   .clk(aclk),
+   .in_bus(m_axi_rvalid),
+   .out_bus(m_axi_rvalid_sort)
+);
+
+delay_chain #(
+    .WIDTH(C_ID_WIDTH), 
+    .STAGES(10)
+) 
+rid_delay_inst(
+   .clk(aclk),
+   .in_bus(m_axi_rid),
+   .out_bus(m_axi_rid_sort)
+);
+
+delay_chain #(
+    .WIDTH(1), 
+    .STAGES(10)
+) 
+rxfer_delay_inst(
+   .clk(aclk),
+   .in_bus(rxfer),
+   .out_bus(rxfer_sort)
+);
+
+delay_chain #(
+    .WIDTH(1), 
+    .STAGES(10)
+) 
+rlast_delay_inst(
+   .clk(aclk),
+   .in_bus(m_axi_rlast),
+   .out_bus(m_axi_rlast_sort)
+);
+
+delay_chain #(
+    .WIDTH(C_NUM_CHANNELS), 
+    .STAGES(10)
+) 
+r_final_transaction_delay_inst(
+   .clk(aclk),
+   .in_bus(r_final_transaction),
+   .out_bus(r_final_transaction_sort)
+);
+
+delay_chain #(
+    .WIDTH(C_NUM_CHANNELS), 
+    .STAGES(10)
+) 
+run_last_delay_inst(
+   .clk(aclk),
+   .in_bus(run_last),
+   .out_bus(run_last_sort)
+);
 
 assign rxfer = m_axi_rready & m_axi_rvalid;
 
 always_comb begin
   for (int i = 0; i < C_NUM_CHANNELS; i++) begin
     decr_r_transaction_cntr[i] = rxfer & m_axi_rlast & (m_axi_rid == i);
+  end
+end
+
+always @(posedge aclk) begin
+  for (int i = 0; i < C_NUM_CHANNELS; i++) begin
+    if (ctrl_start) begin
+      axi_cnt_per_run[i] <= 1;
+    end
+    else if ((axi_cnt_per_run[i] == ctrl_read_run_count) & rxfer & (m_axi_rid == i)) begin
+      axi_cnt_per_run[i] <= 1;
+    end
+    else if (rxfer & (m_axi_rid == i)) begin
+      axi_cnt_per_run[i] <= axi_cnt_per_run[i] + 1;
+    end
+    else begin
+      axi_cnt_per_run[i] <= axi_cnt_per_run[i];
+    end
+  end
+end
+
+always_comb begin
+  for (int i = 0; i < C_NUM_CHANNELS; i++) begin
+    run_last[i] = (axi_cnt_per_run[i] == ctrl_read_run_count) & ctrl_read_divide;
   end
 end
 

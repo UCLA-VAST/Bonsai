@@ -108,7 +108,7 @@ check: all
 ifeq ($(TARGET),$(filter $(TARGET),sw_emu hw_emu))
 ifeq ($(HOST_ARCH), x86)
 	$(CP) $(EMCONFIG_DIR)/emconfig.json .
-	XCL_EMULATION_MODE=$(TARGET) ./$(EXECUTABLE) $(BUILD_DIR)/merger_tree_p4_l4_i8.xclbin ./data/data_512_16.txt 512 16
+	XCL_EMULATION_MODE=$(TARGET) ./$(EXECUTABLE) $(BUILD_DIR)/merger_tree_p4_l4_i8.xclbin ./data/data_1^14.txt 14
 else
 	mkdir -p $(EMU_DIR)
 	$(CP) $(XILINX_VITIS)/data/emulation/unified $(EMU_DIR)

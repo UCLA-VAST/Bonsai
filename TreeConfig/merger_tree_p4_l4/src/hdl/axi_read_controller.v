@@ -18,7 +18,6 @@ module axi_read_controller #(
   	input wire                                s_axis_tvalid,
   	output wire                               s_axis_tready,
   	input wire  [C_AXIS_TDATA_WIDTH-1:0]      s_axis_tdata,
-  	input wire  [C_AXIS_TDATA_WIDTH/8-1:0]    s_axis_tkeep,
   	input wire                                s_axis_tlast,
   	//input wire                                axi_fifo_empty,
 

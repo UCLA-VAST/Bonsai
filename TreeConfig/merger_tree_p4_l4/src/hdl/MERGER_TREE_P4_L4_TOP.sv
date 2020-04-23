@@ -22,8 +22,6 @@ module MERGER_TREE_P4_L4_TOP #(
   output wire                                   ap_done              ,
   // AXI4 master interface 00
   input wire [8-1:0]                            num_pass             ,
-  input wire [64-1:0]                           single_trans_bytes   ,
-  input wire [32-1:0]                           log_single_trans_bytes,
   input wire [C_M00_AXI_ADDR_WIDTH-1:0]         in_addr_offset       ,
   input wire [C_XFER_SIZE_WIDTH-1:0]            in_xfer_size_in_bytes, // total input size in bytes
   input wire [C_M00_AXI_ADDR_WIDTH-1:0]         out_addr_offset      ,
@@ -59,45 +57,46 @@ timeprecision 1ps;
 ///////////////////////////////////////////////////////////////////////////////
 // Local Parameters
 ///////////////////////////////////////////////////////////////////////////////
-localparam integer LP_NUM_READ_CHANNELS_00  = 8;
+localparam integer LP_BURST_SIZE_BYTES        = 1024;
+localparam integer LP_NUM_READ_CHANNELS_00    = 8;
 localparam integer LP_DW_BYTES_00             = C_M00_AXI_DATA_WIDTH/8;
-localparam integer LP_AXI_BURST_LEN_00        = 1024/LP_DW_BYTES_00 < 256 ? 1024/LP_DW_BYTES_00 : 256;
+localparam integer LP_AXI_BURST_LEN_00        = LP_BURST_SIZE_BYTES/LP_DW_BYTES_00 < 256 ? LP_BURST_SIZE_BYTES/LP_DW_BYTES_00 : 256;
 localparam integer LP_LOG_BURST_LEN_00        = $clog2(LP_AXI_BURST_LEN_00);
 localparam integer LP_BRAM_DEPTH_00           = 32;
 localparam integer LP_RD_MAX_OUTSTANDING_00   = LP_BRAM_DEPTH_00 / LP_AXI_BURST_LEN_00;
-
 
 localparam integer LP_WR_MAX_OUTSTANDING_00   = 32;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Wires and Variables
 ///////////////////////////////////////////////////////////////////////////////
-
 // Control logic
-logic                                                    done = 1'b0;
+logic                                                         done = 1'b0;
 // AXI read master 00 stage
-logic                                                    read_done_00;  // read_done is used to change to another run
+logic                                                         read_done_00;  // read_done is used to change to another run
 
-logic [LP_NUM_READ_CHANNELS_00-1:0]                         rd_tvalid_00;
-logic [LP_NUM_READ_CHANNELS_00-1:0]                         rd_tready_00;
-logic [LP_NUM_READ_CHANNELS_00-1:0]                         rd_tlast_00;
+logic [LP_NUM_READ_CHANNELS_00-1:0]                           rd_tvalid_00;
+logic [LP_NUM_READ_CHANNELS_00-1:0]                           rd_tready_00;
+logic [LP_NUM_READ_CHANNELS_00-1:0]                           rd_tlast_00;
 logic [LP_NUM_READ_CHANNELS_00-1:0][C_M00_AXI_DATA_WIDTH-1:0] rd_tdata_00;
 
 // AXI write master 00 stage
-logic                           merger_out_tvalid;
-logic                           merger_out_tready;
-logic [C_M00_AXI_DATA_WIDTH-1:0]    merger_out_tdata;
+logic                                                         merger_out_tvalid;
+logic                                                         merger_out_tready;
+logic [C_M00_AXI_DATA_WIDTH-1:0]                              merger_out_tdata;
 
 // AXI read control information
-logic                          single_run_read_done;
-logic                          read_start_00;
-logic [C_XFER_SIZE_WIDTH-1:0]  read_size_in_bytes_00; 
-logic [LP_NUM_READ_CHANNELS_00-1:0][C_M00_AXI_ADDR_WIDTH-1:0]   rd_addr_00;
+logic                                                         single_run_read_done;
+logic                                                         read_start_00;
+logic [C_XFER_SIZE_WIDTH-1:0]                                 read_size_in_bytes_00; 
+logic [LP_NUM_READ_CHANNELS_00-1:0][C_M00_AXI_ADDR_WIDTH-1:0] rd_addr_00;
+logic                                                         read_divide;
+logic [C_XFER_SIZE_WIDTH-1:0]                                 read_run_count; 
 // AXI write control information
-logic                          write_done;
-logic                          write_start;
-logic [C_M00_AXI_ADDR_WIDTH-1:0]  write_addr_00;
-logic                          all_done;
+logic                                                         write_done;
+logic                                                         write_start;
+logic [C_M00_AXI_ADDR_WIDTH-1:0]                              write_addr_00;
+logic                                                         all_done;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Begin RTL
@@ -106,7 +105,8 @@ logic                          all_done;
 addr_cal #(
   .NUM_READ_CHANNELS(LP_NUM_READ_CHANNELS_00), 
   .C_M_AXI_ADDR_WIDTH(C_M00_AXI_ADDR_WIDTH),
-  .C_XFER_SIZE_WIDTH(C_XFER_SIZE_WIDTH)
+  .C_XFER_SIZE_WIDTH(C_XFER_SIZE_WIDTH),
+  .C_BURST_SIZE_BYTES(LP_BURST_SIZE_BYTES)
 )
 addr_cal_inst00(
   .aclk                    ( aclk                       ) ,
@@ -115,8 +115,6 @@ addr_cal_inst00(
   .ap_done                 ( all_done                   ) ,  
 
   .num_pass                ( num_pass                   ) ,
-  .single_trans_bytes      ( single_trans_bytes         ) ,
-  .log_single_trans_bytes  ( log_single_trans_bytes     ) ,
   .in_addr_offset          ( in_addr_offset             ) ,
   .in_xfer_size_in_bytes   ( in_xfer_size_in_bytes      ) , // total input size in bytes
   .out_addr_offset         ( out_addr_offset            ) ,  
@@ -125,6 +123,8 @@ addr_cal_inst00(
   .read_start              ( read_start_00              ) ,
   .read_addr               ( rd_addr_00                 ) ,
   .read_size_in_bytes      ( read_size_in_bytes_00      ) ,
+  .read_divide             ( read_divide                ) , // asserted when an axi burst consists of multiple runs
+  .read_run_count          ( read_run_count             ) , // indicate how many 512-bit axi transfers for the current run
   .write_start             ( write_start                ) ,
   .write_addr              ( write_addr_00              )           
 );
@@ -136,6 +136,7 @@ axi_read_master #(
   .C_M_AXI_DATA_WIDTH  ( C_M00_AXI_DATA_WIDTH       ) ,
   .C_NUM_CHANNELS      ( LP_NUM_READ_CHANNELS_00    ) ,
   .C_XFER_SIZE_WIDTH   ( C_XFER_SIZE_WIDTH          ) ,
+  .C_BURST_SIZE_BYTES  ( LP_BURST_SIZE_BYTES        ) ,
   .C_MAX_OUTSTANDING   ( LP_RD_MAX_OUTSTANDING_00   ) ,
   .C_INCLUDE_DATA_FIFO ( 1                          )
 )
@@ -147,6 +148,8 @@ AXI_Read_inst00 (
   .ctrl_done               ( single_run_read_done       ) ,
   .ctrl_addr_offset        ( rd_addr_00                 ) ,
   .ctrl_xfer_size_in_bytes ( read_size_in_bytes_00      ) ,
+  .ctrl_read_divide        ( read_divide                ) , 
+  .ctrl_read_run_count     ( read_run_count             ) ,
 
   .m_axi_arvalid           ( m00_axi_arvalid            ) ,
   .m_axi_arready           ( m00_axi_arready            ) ,
@@ -171,72 +174,23 @@ AXI_Read_inst00 (
 
 // merger kernel
 MERGER_INTEGRATION #(
-  .C_AXIS00_TDATA_WIDTH ( C_M00_AXI_DATA_WIDTH ) ,
-  .C_AXIS01_TDATA_WIDTH ( C_M00_AXI_DATA_WIDTH ) ,
-  .C_AXIS02_TDATA_WIDTH ( C_M00_AXI_DATA_WIDTH ) ,
-  .C_AXIS03_TDATA_WIDTH ( C_M00_AXI_DATA_WIDTH ) ,
-  .C_AXIS04_TDATA_WIDTH ( C_M00_AXI_DATA_WIDTH ) ,
-  .C_AXIS05_TDATA_WIDTH ( C_M00_AXI_DATA_WIDTH ) ,
-  .C_AXIS06_TDATA_WIDTH ( C_M00_AXI_DATA_WIDTH ) ,
-  .C_AXIS07_TDATA_WIDTH ( C_M00_AXI_DATA_WIDTH ) ,
-  .C_AXIS08_TDATA_WIDTH ( C_M00_AXI_DATA_WIDTH ) ,
-  .C_SORTER_BIT_WIDTH  ( C_SORTER_BIT_WIDTH  ) ,
-  .C_NUM_CLOCKS       ( 1                  )
+  .C_AXIS_TDATA_WIDTH   ( C_M00_AXI_DATA_WIDTH    ) ,
+  .C_SORTER_BIT_WIDTH   ( C_SORTER_BIT_WIDTH      ) ,
+  .NUM_READ_CHANNELS    ( LP_NUM_READ_CHANNELS_00 ) ,
+  .C_NUM_CLOCKS         ( 1                       )
 )
 MERGER_INTEGRATION_inst0  (
   .s_axis_aclk   ( kernel_clk                           ) ,
   .s_axis_areset ( kernel_rst                           ) ,
 
-  .s00_axis_tvalid ( rd_tvalid_00[0]                    ) ,
-  .s00_axis_tready ( rd_tready_00[0]                    ) ,
-  .s00_axis_tdata  ( rd_tdata_00[0]                     ) ,
-  .s00_axis_tkeep  ( {C_M00_AXI_DATA_WIDTH/8{1'b1}}     ) ,
-  .s00_axis_tlast  ( rd_tlast_00[0]                     ) , 
+  .s_axis_tvalid ( rd_tvalid_00                       ) ,
+  .s_axis_tready ( rd_tready_00                       ) ,
+  .s_axis_tdata  ( rd_tdata_00                        ) ,
+  .s_axis_tlast  ( rd_tlast_00                        ) , 
 
-  .s01_axis_tvalid ( rd_tvalid_00[1]                    ) ,
-  .s01_axis_tready ( rd_tready_00[1]                    ) ,
-  .s01_axis_tdata  ( rd_tdata_00[1]                     ) ,
-  .s01_axis_tkeep  ( {C_M00_AXI_DATA_WIDTH/8{1'b1}}     ) ,
-  .s01_axis_tlast  ( rd_tlast_00[1]                     ) ,
-
-  .s02_axis_tvalid ( rd_tvalid_00[2]                    ) ,
-  .s02_axis_tready ( rd_tready_00[2]                    ) ,
-  .s02_axis_tdata  ( rd_tdata_00[2]                     ) ,
-  .s02_axis_tkeep  ( {C_M00_AXI_DATA_WIDTH/8{1'b1}}     ) ,
-  .s02_axis_tlast  ( rd_tlast_00[2]                     ) , 
-
-  .s03_axis_tvalid ( rd_tvalid_00[3]                    ) ,
-  .s03_axis_tready ( rd_tready_00[3]                    ) ,
-  .s03_axis_tdata  ( rd_tdata_00[3]                     ) ,
-  .s03_axis_tkeep  ( {C_M00_AXI_DATA_WIDTH/8{1'b1}}     ) ,
-  .s03_axis_tlast  ( rd_tlast_00[3]                     ) ,
-
-  .s04_axis_tvalid ( rd_tvalid_00[4]                    ) ,
-  .s04_axis_tready ( rd_tready_00[4]                    ) ,
-  .s04_axis_tdata  ( rd_tdata_00[4]                     ) ,
-  .s04_axis_tkeep  ( {C_M00_AXI_DATA_WIDTH/8{1'b1}}     ) ,
-  .s04_axis_tlast  ( rd_tlast_00[4]                     ) , 
-
-  .s05_axis_tvalid ( rd_tvalid_00[5]                    ) ,
-  .s05_axis_tready ( rd_tready_00[5]                    ) ,
-  .s05_axis_tdata  ( rd_tdata_00[5]                     ) ,
-  .s05_axis_tkeep  ( {C_M00_AXI_DATA_WIDTH/8{1'b1}}     ) ,
-  .s05_axis_tlast  ( rd_tlast_00[5]                     ) ,
-
-  .s06_axis_tvalid ( rd_tvalid_00[6]                    ) ,
-  .s06_axis_tready ( rd_tready_00[6]                    ) ,
-  .s06_axis_tdata  ( rd_tdata_00[6]                     ) ,
-  .s06_axis_tkeep  ( {C_M00_AXI_DATA_WIDTH/8{1'b1}}     ) ,
-  .s06_axis_tlast  ( rd_tlast_00[6]                     ) , 
-
-  .s07_axis_tvalid ( rd_tvalid_00[7]                    ) ,
-  .s07_axis_tready ( rd_tready_00[7]                    ) ,
-  .s07_axis_tdata  ( rd_tdata_00[7]                     ) ,
-  .s07_axis_tkeep  ( {C_M00_AXI_DATA_WIDTH/8{1'b1}} ) ,
-  .s07_axis_tlast  ( rd_tlast_00[7]                     ) ,
-  
   .m_axis_aclk   ( kernel_clk                           ) ,
   .m_axis_areset ( kernel_rst                           ) ,
+  
   .m_axis_tvalid ( merger_out_tvalid                    ) ,
   .m_axis_tready ( merger_out_tready                    ) ,
   .m_axis_tdata  ( merger_out_tdata                     ) ,
