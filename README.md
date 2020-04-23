@@ -11,7 +11,7 @@ gcc -o datagen datagen.c
 ./datagen 20
 ```
 
-For hardware emulation, change the Makefile correspondingly as below. 
+For hardware emulation, you can specify the input testbech as well as the number of elements you want to sort by changing the Makefile correspondingly as below. 
 
 ```bash
 check: all
