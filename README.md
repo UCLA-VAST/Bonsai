@@ -3,7 +3,7 @@ This repository lists various fundamental merger tree configurations of Bonsai.
 
 ## Prerequisities
 
-This directory supports both SDAccel 2018.3, SDAccel 2019.1, Vitis 2019.2. For AWS HDK flow, we will upload the corresponding interface later. For better version control, we suggest you using the latest Vitis 2019.2 flow.
+This directory supports both SDAccel 2018.3, SDAccel 2019.1, Vitis 2019.2. For better version control, we suggest you using the latest Vitis 2019.2 flow.
 
 You may need to download the Vitis_Accel 2019.2 github directory from [Xilinx Github](https://github.com/Xilinx/Vitis_Accel_Examples.git). Then copy our Bonsai directory into its rtl_kernel folder.
 
