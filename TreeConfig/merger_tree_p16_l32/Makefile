@@ -72,6 +72,8 @@ endif
 
 # Kernel linker flags
 LDCLFLAGS += --config krnl_dram.ini 
+LDCLFLAGS += --vivado.prop run.impl_1.STRATEGY=Performance_Explore
+LDCLFLAGS += --vivado.prop run.impl_1.STRATEGY=Congestion_SpreadLogic_high
 
 EXECUTABLE = host
 CMD_ARGS = $(BUILD_DIR)/merger_tree_p16_l32_i64_mb.xclbin
