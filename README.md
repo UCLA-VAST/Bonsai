@@ -1,5 +1,5 @@
 # Bonsai
-This repository lists various fundamental merger tree configurations of Bonsai.
+This repository shows a simple demo of various fundamental merger tree configurations of Bonsai.
 
 ## Prerequisities
 
@@ -78,5 +78,7 @@ Then you may be able to run the on-board test as follows.
 
 
 
-##Platform support
+## Platform support
+Bonsai supports various Xilinx platforms such as: VCU1525(ASW F1), U200 and U250. The only difference across different platforms is when running a tree using multiple DRAM banks, Bonsai may experience different place&route strategy, as different platforms have different organizations of DRAM banks and SLRs. 
+For any further information or support, please send email to \<<wkqiao2015@ucla.edu>\>.
 
