@@ -36,7 +36,7 @@ int main(int argc, char** argv)
 
     // initial pass starts from 2^4 elements
     // sorted chunk increase 2^6 per each pass 
-    uint8_t num_pass = (uint8_t) ((pow_num - 4) % 6) == 0 ? ((pow_num - 4) / 6) : ((pow_num - 4) / 6) + 1;
+    uint8_t num_pass = (uint8_t) ceil((pow_num - 4) / 6.0);
     std::cout << "Number of pass is " << static_cast<uint16_t>(num_pass) << std::endl;
 
     //Allocate Memory in Host Memory
