@@ -1,5 +1,5 @@
 # Bonsai
-This repository shows a simple demo of various fundamental merger tree configurations of Bonsai.
+This repository shows a simple demo of various fundamental merger tree configurations of Bonsai. We will continue upload relavant files onto here.
 
 ## Prerequisities
 
